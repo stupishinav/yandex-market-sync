@@ -1,0 +1,24 @@
+import sys
+import logging
+import argparse
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--mode', choices=['stock', 'prices', 'both'], default='both')
+    args = parser.parse_args()
+    
+    print(f"🚀 Запуск в режиме: {args.mode}")
+    
+    if args.mode in ['stock', 'both']:
+        from .stock_updater import StockUpdater
+        StockUpdater().run()
+    
+    if args.mode in ['prices', 'both']:
+        from .price_updater import PriceUpdater
+        PriceUpdater().run()
+
+if __name__ == "__main__":
+    main()

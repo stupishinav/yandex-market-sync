@@ -1,0 +1,52 @@
+name: Синхронизация цен
+
+on:
+  schedule:
+    - cron: '0 9 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Режим'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - stock
+          - prices
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Установка пакетов
+        run: pip install -r src/requirements.txt
+      
+      - name: Запуск синхронизации
+        run: python -m src --mode ${{ github.event.inputs.mode || 'both' }}
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          FTP_FOLDER: ${{ secrets.FTP_FOLDER }}
+          FTP_PRICE_FOLDER: ${{ secrets.FTP_PRICE_FOLDER || 'prices/' }}
+          YM_API_KEY: ${{ secrets.YM_API_KEY }}
+          YM_CAMPAIGN_ID: ${{ secrets.YM_CAMPAIGN_ID }}
+          YM_WAREHOUSE_ID: ${{ secrets.YM_WAREHOUSE_ID }}
+          YM_BUSINESS_ID: ${{ secrets.YM_BUSINESS_ID }}
+      
+      - name: Сохранение результатов
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: результаты
+          path: src/data/**/*.json
+          retention-days: 7
