@@ -1,3 +1,9 @@
+import os
+import json
+import csv
+import logging
+from datetime import datetime
+from typing import List, Dict, Any  ← ЭТО ГЛАВНОЕ!
 def _download_price_files(self) -> List[str]:
     """Скачивает файлы с ценами с FTP - упрощенная версия"""
     local_dir = "src/data/prices/"
