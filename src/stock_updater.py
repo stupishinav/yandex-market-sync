@@ -1,6 +1,5 @@
 """
 Обновление остатков на Яндекс.Маркете
-Поддерживает JSON и CSV файлы
 """
 
 import os
@@ -17,132 +16,123 @@ logger = logging.getLogger(__name__)
 
 
 class StockUpdater:
-    """Класс для обновления остатков"""
-
     def __init__(self):
         self.ftp_client = FTPClient(
-            host=os.environ['FTP_HOST'],
-            user=os.environ['FTP_USER'],
-            password=os.environ['FTP_PASS']
+            host=os.environ.get('FTP_HOST'),
+            user=os.environ.get('FTP_USER'),
+            password=os.environ.get('FTP_PASS')
         )
         self.ym_client = YandexMarketClient(
-            api_key=os.environ['YM_API_KEY'],
-            campaign_id=os.environ['YM_CAMPAIGN_ID'],
-            warehouse_id=os.environ['YM_WAREHOUSE_ID'],
-            business_id=os.environ['YM_BUSINESS_ID']
+            api_key=os.environ.get('YM_API_KEY'),
+            campaign_id=os.environ.get('YM_CAMPAIGN_ID'),
+            warehouse_id=os.environ.get('YM_WAREHOUSE_ID'),
+            business_id=os.environ.get('YM_BUSINESS_ID')
         )
         self.ftp_folder = os.environ.get('FTP_FOLDER', '/')
+        self.ftp_price_folder = os.environ.get('FTP_PRICE_FOLDER', 'prices/')
 
     def run(self) -> bool:
-        """Основной метод обновления остатков"""
         try:
-            logger.info("🔄 Начинаем обновление остатков...")
+            logger.info("Начинаем обновление остатков...")
 
-            # Скачиваем файлы с остатками с FTP
+            if not os.environ.get('FTP_HOST'):
+                logger.error("Нет секрета FTP_HOST!")
+                return False
+
             stock_files = self._download_stock_files()
             if not stock_files:
-                logger.warning("⚠️ Файлы с остатками не найдены")
+                logger.warning("Файлы с остатками не найдены")
                 return False
 
-            # Парсим файлы (поддерживает JSON и CSV)
             stocks = self._parse_stock_files(stock_files)
             if not stocks:
-                logger.warning("⚠️ Нет данных об остатках для обновления")
+                logger.warning("Нет данных об остатках")
                 return False
 
-            logger.info(f"📊 Найдено {len(stocks)} товаров для обновления остатков")
-
-            # Отправляем остатки в Яндекс.Маркет
+            logger.info(f"Найдено {len(stocks)} товаров для обновления остатков")
             result = self._update_stocks(stocks)
-
-            # Сохраняем результат
             self._save_result(stocks, result)
-
-            logger.info("✅ Обновление остатков успешно завершено")
+            logger.info("Остатки обновлены!")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Ошибка при обновлении остатков: {e}")
+            logger.error(f"Ошибка: {e}")
             return False
 
     def _download_stock_files(self) -> List[str]:
-        """Скачивает файлы с остатками с FTP"""
         local_dir = "src/data/stock/"
         os.makedirs(local_dir, exist_ok=True)
 
-        # Ищем файлы с "stock" в названии (и .json, и .csv)
-        remote_files = self.ftp_client.list_files(self.ftp_folder, pattern="stock")
-        downloaded = []
+        paths_to_try = [
+            self.ftp_price_folder,
+            "/from_etm",
+            "from_etm",
+            "/",
+            ""
+        ]
 
-        for remote_file in remote_files:
-            local_path = os.path.join(local_dir, os.path.basename(remote_file))
-            if self.ftp_client.download_file(remote_file, local_path):
-                downloaded.append(local_path)
-                logger.info(f"📥 Скачан файл: {remote_file}")
+        for path in paths_to_try:
+            try:
+                logger.info(f"Ищем файл с остатками в: {path}")
+                remote_files = self.ftp_client.list_files(path, pattern="price")
+                if remote_files:
+                    downloaded = []
+                    for f in remote_files:
+                        local = os.path.join(local_dir, os.path.basename(f))
+                        if self.ftp_client.download_file(f, local):
+                            downloaded.append(local)
+                            logger.info(f"Найден файл: {f}")
+                    if downloaded:
+                        return downloaded
+            except:
+                continue
 
-        return downloaded
+        return []
 
     def _parse_stock_files(self, file_paths: List[str]) -> List[Dict]:
-        """
-        Парсит файлы остатков
-        Поддерживает: .json и .csv
-        """
         all_stocks = []
+        encodings = ['cp1251', 'windows-1251', 'utf-8-sig', 'utf-8', 'latin-1']
 
         for file_path in file_paths:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    # ===== ЕСЛИ ФАЙЛ JSON =====
-                    if file_path.endswith('.json'):
-                        data = json.load(f)
-                        if isinstance(data, list):
-                            all_stocks.extend(data)
-                        elif isinstance(data, dict) and 'stocks' in data:
-                            all_stocks.extend(data['stocks'])
-                        logger.info(f"📄 Прочитан JSON: {os.path.basename(file_path)}")
-
-                    # ===== ЕСЛИ ФАЙЛ CSV =====
-                    elif file_path.endswith('.csv'):
-                        reader = csv.DictReader(f)
-                        for row in reader:
-                            # Пытаемся найти колонки (поддерживает разные названия)
-                            offer_id = row.get('offer_id') or row.get('SKU') or row.get('id') or row.get('Артикул')
-                            stock = row.get('stock') or row.get('quantity') or row.get('Количество') or row.get('Остаток')
-                            
-                            if offer_id and stock:
-                                all_stocks.append({
-                                    'offer_id': str(offer_id).strip(),
-                                    'stock': int(float(str(stock).strip()))  # преобразуем в число
-                                })
-                            else:
-                                logger.warning(f"⚠️ В CSV пропущена строка: {row}")
-                        logger.info(f"📄 Прочитан CSV: {os.path.basename(file_path)}")
-
-                    else:
-                        logger.warning(f"⚠️ Неподдерживаемый формат: {file_path}")
-
+                for encoding in encodings:
+                    try:
+                        with open(file_path, 'r', encoding=encoding) as f:
+                            if file_path.endswith('.json'):
+                                data = json.load(f)
+                                if isinstance(data, list):
+                                    all_stocks.extend(data)
+                                    logger.info(f"Прочитан JSON (кодировка: {encoding})")
+                                    break
+                            elif file_path.endswith('.csv'):
+                                reader = csv.DictReader(f, delimiter=';')
+                                for row in reader:
+                                    offer_id = row.get('Код ЭТМ') or row.get('offer_id') or row.get('SKU')
+                                    stock = row.get('Количество') or row.get('stock') or row.get('quantity')
+                                    if offer_id and stock:
+                                        stock_val = str(stock).strip().replace(',', '.')
+                                        all_stocks.append({
+                                            'offer_id': str(offer_id).strip(),
+                                            'stock': float(stock_val)
+                                        })
+                                logger.info(f"Прочитан CSV (кодировка: {encoding})")
+                                break
+                    except UnicodeDecodeError:
+                        continue
+                    except Exception as e:
+                        continue
             except Exception as e:
-                logger.error(f"❌ Ошибка парсинга {file_path}: {e}")
+                logger.error(f"Ошибка парсинга {file_path}: {e}")
 
         return all_stocks
 
     def _update_stocks(self, stocks: List[Dict]) -> Dict:
-        """Отправляет остатки в Яндекс.Маркет"""
         response = self.ym_client.update_stock(stocks)
         return response.json() if response else {}
 
     def _save_result(self, stocks: List[Dict], result: Dict) -> None:
-        """Сохраняет результат в JSON"""
-        output_file = f"src/data/stock/yandex_stock_update_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        
-        data = {
-            "timestamp": datetime.now().isoformat(),
-            "total_items": len(stocks),
-            "stocks": stocks,
-            "api_response": result
-        }
-
+        os.makedirs("src/data/stock/", exist_ok=True)
+        output_file = f"src/data/stock/update_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-        logger.info(f"💾 Результат сохранен: {output_file}")
+            json.dump({"stocks": stocks, "api_response": result}, f, indent=2)
+        logger.info(f"Сохранен: {output_file}")
