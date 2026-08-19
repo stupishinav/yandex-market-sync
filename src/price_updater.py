@@ -81,69 +81,50 @@ class PriceUpdater:
                         local = os.path.join(local_dir, os.path.basename(f))
                         if self.ftp_client.download_file(f, local):
                             downloaded.append(local)
-                            logger.info(f"Найден и скачан: {f}")
+                            logger.info(f"Найден: {f}")
                     if downloaded:
                         return downloaded
-            except Exception as e:
-                logger.warning(f"Ошибка при поиске в {path}: {e}")
+            except:
                 continue
 
         return []
 
     def _parse_price_files(self, file_paths: List[str]) -> List[Dict[str, Any]]:
         all_prices = []
-        encodings = ['cp1251', 'windows-1251', 'utf-8-sig', 'utf-8', 'latin-1']
+        encodings = ['utf-8-sig', 'cp1251', 'windows-1251', 'latin-1', 'utf-8']
 
         for file_path in file_paths:
-            logger.info(f"Обработка файла: {file_path}")
-            
-            # Сначала прочитаем файл как текст и посмотрим, что внутри
             try:
-                with open(file_path, 'r', encoding='cp1251') as f:
-                    content = f.read()
-                    logger.info(f"Содержимое файла (первые 500 символов):\n{content[:500]}")
+                for encoding in encodings:
+                    try:
+                        with open(file_path, 'r', encoding=encoding) as f:
+                            if file_path.endswith('.json'):
+                                data = json.load(f)
+                                if isinstance(data, list):
+                                    all_prices.extend(data)
+                                    logger.info(f"Прочитан JSON (кодировка: {encoding})")
+                                    break
+                            elif file_path.endswith('.csv'):
+                                # ВАЖНО: разделитель ; (точка с запятой)
+                                reader = csv.DictReader(f, delimiter=';')
+                                for row in reader:
+                                    offer_id = row.get('Код ЭТМ') or row.get('offer_id') or row.get('SKU')
+                                    price = row.get('Розничная Цена') or row.get('price') or row.get('цена')
+                                    if offer_id and price:
+                                        # Заменяем запятую на точку в числе, если есть
+                                        price_str = str(price).strip().replace(',', '.')
+                                        all_prices.append({
+                                            'offer_id': str(offer_id).strip(),
+                                            'price': float(price_str)
+                                        })
+                                logger.info(f"Прочитан CSV (кодировка: {encoding})")
+                                break
+                    except UnicodeDecodeError:
+                        continue
+                    except Exception as e:
+                        continue
             except Exception as e:
-                logger.warning(f"Не удалось прочитать как cp1251: {e}")
-
-            # Теперь пробуем парсить
-            for encoding in encodings:
-                try:
-                    with open(file_path, 'r', encoding=encoding) as f:
-                        if file_path.endswith('.json'):
-                            data = json.load(f)
-                            if isinstance(data, list):
-                                all_prices.extend(data)
-                                logger.info(f"Прочитан JSON (кодировка: {encoding})")
-                                break
-                        elif file_path.endswith('.csv'):
-                            reader = csv.DictReader(f)
-                            # Проверяем названия колонок
-                            logger.info(f"Названия колонок в CSV: {reader.fieldnames}")
-                            
-                            for row in reader:
-                                logger.info(f"Строка данных: {row}")
-                                
-                                # Ищем колонки
-                                offer_id = row.get('Код ЭТМ') or row.get('offer_id') or row.get('SKU') or row.get('id')
-                                price = row.get('Розничная Цена') or row.get('price') or row.get('цена') or row.get('Price')
-                                
-                                if offer_id and price:
-                                    all_prices.append({
-                                        'offer_id': str(offer_id).strip(),
-                                        'price': float(str(price).strip().replace(',', '.'))
-                                    })
-                                    logger.info(f"Добавлен товар: {offer_id} -> {price}")
-                                else:
-                                    logger.warning(f"Пропущена строка (нет offer_id или price): {row}")
-                            
-                            if all_prices:
-                                logger.info(f"Прочитан CSV (кодировка: {encoding}), найдено {len(all_prices)} товаров")
-                                break
-                except UnicodeDecodeError:
-                    continue
-                except Exception as e:
-                    logger.error(f"Ошибка при чтении {file_path} с кодировкой {encoding}: {e}")
-                    continue
+                logger.error(f"Ошибка парсинга {file_path}: {e}")
 
         return all_prices
 
