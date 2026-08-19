@@ -34,7 +34,7 @@ class PriceUpdater:
     def run(self) -> bool:
         try:
             logger.info("Начинаем обновление цен...")
-            
+
             if not os.environ.get('FTP_HOST'):
                 logger.error("Нет секрета FTP_HOST!")
                 return False
@@ -70,7 +70,7 @@ class PriceUpdater:
             "/",
             ""
         ]
-        
+
         for path in paths_to_try:
             try:
                 logger.info(f"Ищем в: {path}")
@@ -86,46 +86,44 @@ class PriceUpdater:
                         return downloaded
             except:
                 continue
-        
+
         return []
 
-   def _parse_price_files(self, file_paths: List[str]) -> List[Dict[str, Any]]:
-    all_prices = []
-    for file_path in file_paths:
-        try:
-            # Пробуем разные кодировки
-            encodings = ['utf-8-sig', 'cp1251', 'windows-1251', 'latin-1', 'utf-8']
-            
-            for encoding in encodings:
-                try:
-                    with open(file_path, 'r', encoding=encoding) as f:
-                        if file_path.endswith('.json'):
-                            data = json.load(f)
-                            if isinstance(data, list):
-                                all_prices.extend(data)
-                                logger.info(f"✅ Прочитан JSON (кодировка: {encoding})")
+    def _parse_price_files(self, file_paths: List[str]) -> List[Dict[str, Any]]:
+        all_prices = []
+        encodings = ['utf-8-sig', 'cp1251', 'windows-1251', 'latin-1', 'utf-8']
+
+        for file_path in file_paths:
+            try:
+                for encoding in encodings:
+                    try:
+                        with open(file_path, 'r', encoding=encoding) as f:
+                            if file_path.endswith('.json'):
+                                data = json.load(f)
+                                if isinstance(data, list):
+                                    all_prices.extend(data)
+                                    logger.info(f"Прочитан JSON (кодировка: {encoding})")
+                                    break
+                            elif file_path.endswith('.csv'):
+                                reader = csv.DictReader(f)
+                                for row in reader:
+                                    offer_id = row.get('offer_id') or row.get('SKU') or row.get('id')
+                                    price = row.get('price') or row.get('цена') or row.get('Price')
+                                    if offer_id and price:
+                                        all_prices.append({
+                                            'offer_id': str(offer_id).strip(),
+                                            'price': float(str(price).strip().replace(',', '.'))
+                                        })
+                                logger.info(f"Прочитан CSV (кодировка: {encoding})")
                                 break
-                        elif file_path.endswith('.csv'):
-                            reader = csv.DictReader(f)
-                            for row in reader:
-                                offer_id = row.get('offer_id') or row.get('SKU') or row.get('id')
-                                price = row.get('price') or row.get('цена') or row.get('Price')
-                                if offer_id and price:
-                                    all_prices.append({
-                                        'offer_id': str(offer_id).strip(),
-                                        'price': float(str(price).strip().replace(',', '.'))
-                                    })
-                            logger.info(f"✅ Прочитан CSV (кодировка: {encoding})")
-                            break
-                except UnicodeDecodeError:
-                    continue
-                except Exception as e:
-                    logger.error(f"Ошибка при чтении {file_path} с кодировкой {encoding}: {e}")
-                    continue
-                    
-        except Exception as e:
-            logger.error(f"Ошибка парсинга {file_path}: {e}")
-    return all_prices
+                    except UnicodeDecodeError:
+                        continue
+                    except Exception as e:
+                        continue
+            except Exception as e:
+                logger.error(f"Ошибка парсинга {file_path}: {e}")
+
+        return all_prices
 
     def _update_prices(self, prices: List[Dict[str, Any]]) -> Dict[str, Any]:
         payload = {
