@@ -107,8 +107,9 @@ class PriceUpdater:
                             elif file_path.endswith('.csv'):
                                 reader = csv.DictReader(f)
                                 for row in reader:
-                                    offer_id = row.get('offer_id') or row.get('SKU') or row.get('id')
-                                    price = row.get('price') or row.get('цена') or row.get('Price')
+                                    # Ищем колонки (сначала русские названия, потом английские)
+                                    offer_id = row.get('Код ЭТМ') or row.get('offer_id') or row.get('SKU') or row.get('id')
+                                    price = row.get('Розничная Цена') or row.get('price') or row.get('цена') or row.get('Price')
                                     if offer_id and price:
                                         all_prices.append({
                                             'offer_id': str(offer_id).strip(),
