@@ -63,7 +63,7 @@ class YandexMarketClient:
 
     def update_prices(self, prices):
         """
-        Обновление цен с разбивкой на пачки по 2000 товаров
+        Обновление цен (ПРАВИЛЬНАЯ СТРУКТУРА!)
         """
         if not prices:
             logger.error("❌ Нет данных для обновления цен!")
@@ -76,7 +76,7 @@ class YandexMarketClient:
             'Content-Type': 'application/json'
         }
 
-        # Разбиваем товары на пачки по 2000 (максимальный лимит Яндекса)
+        # Разбиваем товары на пачки по 2000
         chunk_size = 2000
         total_items = len(prices)
         chunks = [prices[i:i + chunk_size] for i in range(0, total_items, chunk_size)]
@@ -88,32 +88,28 @@ class YandexMarketClient:
         for idx, chunk in enumerate(chunks):
             logger.info(f"📤 Отправка пачки {idx + 1}/{len(chunks)} (товаров: {len(chunk)})")
             
-            # Формируем payload для текущей пачки
-            price_entries = []
+            # ПРАВИЛЬНАЯ СТРУКТУРА ДЛЯ ЦЕН
+            offers = []
             for item in chunk:
                 try:
-                    price_entry = {
-                        "id": str(item['offer_id']).strip(),
-                        "price": {
-                            "value": str(item['price']).replace(',', '.'),
-                            "currencyId": "RUR"
-                        }
+                    offer = {
+                        "offerId": str(item['offer_id']).strip(),
+                        "price": str(item['price']).replace(',', '.'),
+                        "currency": "RUR"
                     }
-                    # Если есть старая цена
+                    # Если есть старая цена (для скидки)
                     if 'old_price' in item and item['old_price']:
-                        price_entry['price']['discountBase'] = str(item['old_price']).replace(',', '.')
-                    price_entries.append(price_entry)
+                        offer["oldPrice"] = str(item['old_price']).replace(',', '.')
+                    offers.append(offer)
                 except Exception as e:
                     logger.error(f"Ошибка в данных товара {item.get('offer_id')}: {e}")
                     continue
             
-            payload = {"prices": price_entries}
+            payload = {"offers": offers}
             
-            # Отладка: показываем первые 2 товара в пачке
-            if len(price_entries) > 0:
-                logger.info(f"🔍 Пример товара в пачке: {price_entries[0]}")
+            logger.info(f"🔍 Пример товара в пачке: {offers[0] if offers else 'нет данных'}")
+            logger.info(f"🔍 Payload (первые 200 символов): {str(payload)[:200]}")
             
-            # Отправляем запрос
             try:
                 response = requests.post(url, json=payload, headers=headers)
                 if response.status_code == 200:
@@ -121,16 +117,17 @@ class YandexMarketClient:
                 else:
                     logger.error(f"❌ Ошибка в пачке {idx + 1}/{len(chunks)}: {response.status_code}")
                     logger.error(f"Ответ: {response.text}")
+                    logger.error(f"Отправленный payload: {payload}")
                 all_responses.append(response)
             except Exception as e:
                 logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
                 all_responses.append(None)
             
-            # Небольшая пауза между пачками (чтобы не перегружать API)
+            # Пауза между пачками
             if idx < len(chunks) - 1:
                 time.sleep(0.5)
         
-        # Возвращаем последний успешный ответ или None
+        # Возвращаем последний успешный ответ
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
                 return resp
