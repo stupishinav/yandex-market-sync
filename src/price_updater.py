@@ -45,12 +45,19 @@ class PriceUpdater:
                 return False
 
             prices = self._parse_price_files(price_files)
+            
+            logger.info(f"🔍 Прочитано товаров из файла: {len(prices)}")
+            
             if not prices:
                 logger.warning("Нет данных о ценах")
                 return False
 
-            logger.info(f"Найдено {len(prices)} товаров")
+            logger.info(f"Найдено {len(prices)} товаров для обновления цен")
+            
+            # Отправляем цены в Яндекс
             result = self._update_prices(prices)
+            
+            # Сохраняем результат
             self._save_result(prices, result)
             logger.info("Готово!")
             return True
@@ -81,7 +88,7 @@ class PriceUpdater:
                         local = os.path.join(local_dir, os.path.basename(f))
                         if self.ftp_client.download_file(f, local):
                             downloaded.append(local)
-                            logger.info(f"Найден: {f}")
+                            logger.info(f"Найден файл: {f}")
                     if downloaded:
                         return downloaded
             except:
@@ -91,10 +98,12 @@ class PriceUpdater:
 
     def _parse_price_files(self, file_paths: List[str]) -> List[Dict[str, Any]]:
         all_prices = []
-        encodings = ['utf-8-sig', 'cp1251', 'windows-1251', 'latin-1', 'utf-8']
+        encodings = ['cp1251', 'windows-1251', 'utf-8-sig', 'utf-8', 'latin-1']
 
         for file_path in file_paths:
             try:
+                logger.info(f"📄 Открываем файл: {file_path}")
+                
                 for encoding in encodings:
                     try:
                         with open(file_path, 'r', encoding=encoding) as f:
@@ -106,37 +115,59 @@ class PriceUpdater:
                                     break
                             elif file_path.endswith('.csv'):
                                 reader = csv.DictReader(f, delimiter=';')
+                                
+                                logger.info(f"📋 Названия колонок в CSV: {reader.fieldnames}")
+                                
+                                row_count = 0
                                 for row in reader:
+                                    row_count += 1
+                                    if row_count <= 3:
+                                        logger.info(f"📊 Строка {row_count}: {row}")
+                                    
                                     offer_id = row.get('Код ЭТМ') or row.get('offer_id') or row.get('SKU')
                                     price = row.get('Розничная Цена') or row.get('price') or row.get('цена')
+                                    
                                     if offer_id and price:
-                                        price_str = str(price).strip().replace(',', '.')
-                                        all_prices.append({
-                                            'offer_id': str(offer_id).strip(),
-                                            'price': float(price_str)
-                                        })
+                                        try:
+                                            price_str = str(price).strip().replace(',', '.')
+                                            all_prices.append({
+                                                'offer_id': str(offer_id).strip(),
+                                                'price': float(price_str)
+                                            })
+                                        except Exception as e:
+                                            logger.warning(f"⚠️ Ошибка в строке {row_count}: {e}")
+                                    else:
+                                        if row_count <= 3:
+                                            logger.warning(f"⚠️ В строке {row_count} нет 'Код ЭТМ' или 'Розничная Цена'")
+                                
+                                logger.info(f"📊 Всего строк в CSV: {row_count}")
+                                logger.info(f"📊 Прочитано товаров: {len(all_prices)}")
                                 logger.info(f"Прочитан CSV (кодировка: {encoding})")
                                 break
                     except UnicodeDecodeError:
+                        logger.warning(f"⚠️ Не подошла кодировка {encoding}")
                         continue
                     except Exception as e:
+                        logger.error(f"Ошибка при чтении с кодировкой {encoding}: {e}")
                         continue
             except Exception as e:
                 logger.error(f"Ошибка парсинга {file_path}: {e}")
 
+        logger.info(f"🔍 ИТОГО прочитано товаров из CSV: {len(all_prices)}")
         return all_prices
 
     def _update_prices(self, prices: List[Dict[str, Any]]) -> Dict[str, Any]:
-        payload = {
-            "prices": [
-                {
-                    "id": p['offer_id'],
-                    "price": {"value": str(p['price']), "currencyId": "RUR"}
-                }
-                for p in prices
-            ]
-        }
-        response = self.ym_client.update_prices(payload)
+        """
+        Отправляет цены в Яндекс.Маркет
+        """
+        if not prices:
+            logger.error("❌ Нет данных для отправки!")
+            return {}
+        
+        logger.info(f"📤 Отправка {len(prices)} товаров в Яндекс.Маркет")
+        
+        # Отправляем напрямую список товаров в ym_client
+        response = self.ym_client.update_prices(prices)
         return response.json() if response else {}
 
     def _save_result(self, prices: List[Dict], result: Dict) -> None:
