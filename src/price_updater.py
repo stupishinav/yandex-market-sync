@@ -1,224 +1,72 @@
-"""
-Обновление цен на Яндекс.Маркете
-Поддерживает чтение из нескольких папок
-"""
+def update_prices(self, prices):
+    """
+    Обновление цен - ПРАВИЛЬНЫЙ ФОРМАТ
+    """
+    if not prices:
+        logger.error("❌ Нет данных для обновления цен!")
+        return None
 
-import os
-import json
-import csv
-import logging
-from datetime import datetime
-from typing import List, Dict, Any
+    # Используем правильный эндпоинт для бизнеса
+    url = f"{self.base_url}/businesses/{self.business_id}/offer-prices/updates"
+    
+    headers = {
+        'Api-Key': self.api_key,
+        'Content-Type': 'application/json'
+    }
 
-from .ftp_client import FTPClient
-from .ym_client import YandexMarketClient
-
-logger = logging.getLogger(__name__)
-
-
-class PriceUpdater:
-    def __init__(self):
-        self.ftp_client = FTPClient(
-            host=os.environ.get('FTP_HOST'),
-            user=os.environ.get('FTP_USER'),
-            password=os.environ.get('FTP_PASS')
-        )
-        self.ym_client = YandexMarketClient(
-            api_key=os.environ.get('YM_API_KEY'),
-            campaign_id=os.environ.get('YM_CAMPAIGN_ID'),
-            warehouse_id=os.environ.get('YM_WAREHOUSE_ID'),
-            business_id=os.environ.get('YM_BUSINESS_ID')
-        )
-        self.ftp_folder = os.environ.get('FTP_FOLDER', '/')
-        self.ftp_price_folder = os.environ.get('FTP_PRICE_FOLDER', 'prices/')
-
-    def run(self) -> bool:
-        try:
-            logger.info("Начинаем обновление цен...")
-
-            if not os.environ.get('FTP_HOST'):
-                logger.error("Нет секрета FTP_HOST!")
-                return False
-
-            price_files = self._download_price_files()
-            if not price_files:
-                logger.warning("Файлы с ценами не найдены")
-                return False
-
-            prices = self._parse_price_files(price_files)
-            
-            logger.info(f"🔍 Прочитано товаров из файлов: {len(prices)}")
-            
-            if not prices:
-                logger.warning("Нет данных о ценах")
-                return False
-
-            logger.info(f"Найдено {len(prices)} товаров для обновления цен")
-            result = self._update_prices(prices)
-            self._save_result(prices, result)
-            logger.info("Готово!")
-            return True
-
-        except Exception as e:
-            logger.error(f"Ошибка: {e}")
-            return False
-
-    def _download_price_files(self) -> List[str]:
-        local_dir = "src/data/prices/"
-        os.makedirs(local_dir, exist_ok=True)
-
-        # ПАПКИ ДЛЯ ПОИСКА
-        paths_to_try = [
-            self.ftp_price_folder,
-            "/from_etm/19",
-            "/from_etm/14",
-            "/from_etm",
-            "from_etm",
-            "/",
-            ""
-        ]
-
-        all_downloaded = []
+    chunk_size = 2000
+    total_items = len(prices)
+    chunks = [prices[i:i + chunk_size] for i in range(0, total_items, chunk_size)]
+    
+    logger.info(f"📦 Разбивка {total_items} товаров на {len(chunks)} пачек по {chunk_size} шт.")
+    
+    all_responses = []
+    
+    for idx, chunk in enumerate(chunks):
+        logger.info(f"📤 Отправка пачки {idx + 1}/{len(chunks)} (товаров: {len(chunk)})")
         
-        for path in paths_to_try:
+        offers = []
+        for item in chunk:
             try:
-                logger.info(f"🔍 Ищем в: {path}")
-                remote_files = self.ftp_client.list_files(path, pattern="price")
-                if remote_files:
-                    for remote_file in remote_files:
-                        # ГЛАВНОЕ ИЗМЕНЕНИЕ: создаём уникальное имя файла
-                        folder_name = path.replace('/', '_').replace('\\', '_')
-                        if folder_name.startswith('_'):
-                            folder_name = folder_name[1:]
-                        if not folder_name:
-                            folder_name = 'root'
-                        
-                        # Формируем уникальное имя: папка_имя_файла
-                        base_name = os.path.basename(remote_file)
-                        name, ext = os.path.splitext(base_name)
-                        unique_name = f"{folder_name}_{name}{ext}"
-                        local_path = os.path.join(local_dir, unique_name)
-                        
-                        # Проверяем, скачан ли уже этот файл
-                        if os.path.exists(local_path):
-                            logger.info(f"⏭️ Файл уже скачан: {unique_name}")
-                            continue
-                        
-                        if self.ftp_client.download_file(remote_file, local_path):
-                            all_downloaded.append(local_path)
-                            logger.info(f"📥 Найден и скачан: {remote_file} -> {unique_name}")
-            except Exception as e:
-                logger.warning(f"⚠️ Ошибка при поиске в {path}: {e}")
-                continue
-
-        logger.info(f"📊 Всего скачано файлов: {len(all_downloaded)}")
-        return all_downloaded
-
-    def _parse_price_files(self, file_paths: List[str]) -> List[Dict[str, Any]]:
-        all_prices = []
-        encodings = ['cp1251', 'windows-1251', 'utf-8-sig', 'utf-8', 'latin-1']
-
-        for file_path in file_paths:
-            try:
-                logger.info(f"📄 Открываем файл: {file_path}")
+                # Форматируем цену как число с 2 знаками
+                price_value = round(float(item['price']), 2)
                 
-                for encoding in encodings:
-                    try:
-                        with open(file_path, 'r', encoding=encoding) as f:
-                            if file_path.endswith('.json'):
-                                data = json.load(f)
-                                if isinstance(data, list):
-                                    all_prices.extend(data)
-                                    logger.info(f"Прочитан JSON (кодировка: {encoding})")
-                                    break
-                            elif file_path.endswith('.csv'):
-                                reader = csv.DictReader(f, delimiter=';')
-                                
-                                logger.info(f"📋 Названия колонок в CSV: {reader.fieldnames}")
-                                
-                                row_count = 0
-                                for row in reader:
-                                    row_count += 1
-                                    if row_count <= 3:
-                                        logger.info(f"📊 Строка {row_count}: {row}")
-                                    
-                                    # Ищем Код ЭТМ
-                                    offer_id = None
-                                    for key in row.keys():
-                                        if key and key.strip():
-                                            if 'Код ЭТМ' in key or 'offer_id' in key or 'SKU' in key:
-                                                offer_id = row.get(key)
-                                                break
-                                    
-                                    if not offer_id:
-                                        values = list(row.values())
-                                        if values:
-                                            offer_id = values[0]
-                                    
-                                    # Ищем цену
-                                    price = None
-                                    for key in row.keys():
-                                        if key and key.strip():
-                                            if 'Розничная Цена' in key or 'price' in key or 'цена' in key:
-                                                price = row.get(key)
-                                                break
-                                    
-                                    if not price:
-                                        values = list(row.values())
-                                        if len(values) > 9:
-                                            price = values[9]
-                                    
-                                    if offer_id and price:
-                                        try:
-                                            price_str = str(price).strip().replace(',', '.')
-                                            if price_str and price_str.replace('.', '', 1).isdigit():
-                                                all_prices.append({
-                                                    'offer_id': str(offer_id).strip(),
-                                                    'price': round(float(price_str), 2)
-                                                })
-                                        except Exception as e:
-                                            logger.warning(f"⚠️ Ошибка в строке {row_count}: {e}")
-                                    else:
-                                        if row_count <= 3:
-                                            logger.warning(f"⚠️ В строке {row_count} нет 'Код ЭТМ' или 'Розничная Цена'")
-                                
-                                logger.info(f"📊 Всего строк в CSV: {row_count}")
-                                logger.info(f"📊 Прочитано товаров: {len(all_prices)}")
-                                logger.info(f"Прочитан CSV (кодировка: {encoding})")
-                                break
-                    except UnicodeDecodeError:
-                        logger.warning(f"⚠️ Не подошла кодировка {encoding}")
-                        continue
-                    except Exception as e:
-                        logger.error(f"Ошибка при чтении с кодировкой {encoding}: {e}")
-                        continue
+                # ПРАВИЛЬНАЯ СТРУКТУРА: price - это ОБЪЕКТ!
+                offer = {
+                    "offerId": str(item['offer_id']).strip(),
+                    "price": {
+                        "value": price_value,        # ← ЧИСЛО!
+                        "currencyId": "RUR"
+                    }
+                }
+                offers.append(offer)
             except Exception as e:
-                logger.error(f"Ошибка парсинга {file_path}: {e}")
-
-        # Удаляем дубликаты по offer_id (если товар есть в нескольких файлах)
-        unique_prices = {}
-        for item in all_prices:
-            offer_id = item.get('offer_id')
-            if offer_id:
-                # Если товар уже есть, оставляем последнюю цену
-                unique_prices[offer_id] = item
+                logger.error(f"Ошибка в данных товара {item.get('offer_id')}: {e}")
+                continue
         
-        result = list(unique_prices.values())
-        logger.info(f"🔍 ИТОГО прочитано уникальных товаров: {len(result)} (было {len(all_prices)})")
-        return result
-
-    def _update_prices(self, prices: List[Dict[str, Any]]) -> Dict[str, Any]:
-        if not prices:
-            logger.error("❌ Нет данных для отправки!")
-            return {}
+        payload = {"offers": offers}
         
-        logger.info(f"📤 Отправка {len(prices)} товаров в Яндекс.Маркет")
-        response = self.ym_client.update_prices(prices)
-        return response.json() if response else {}
-
-    def _save_result(self, prices: List[Dict], result: Dict) -> None:
-        os.makedirs("src/data/prices/", exist_ok=True)
-        output_file = f"src/data/prices/update_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump({"prices": prices, "api_response": result}, f, indent=2)
-        logger.info(f"Сохранен: {output_file}")
+        if offers:
+            logger.info(f"🔍 Пример товара в пачке: {offers[0]}")
+            logger.info(f"🔍 Payload (первые 200 символов): {str(payload)[:200]}")
+        
+        try:
+            response = requests.post(url, json=payload, headers=headers)
+            if response.status_code == 200:
+                logger.info(f"✅ Пачка {idx + 1}/{len(chunks)} успешно отправлена")
+            else:
+                logger.error(f"❌ Ошибка в пачке {idx + 1}/{len(chunks)}: {response.status_code}")
+                logger.error(f"Ответ: {response.text}")
+            all_responses.append(response)
+        except Exception as e:
+            logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
+            all_responses.append(None)
+        
+        if idx < len(chunks) - 1:
+            import time
+            time.sleep(0.5)
+    
+    for resp in reversed(all_responses):
+        if resp and resp.status_code == 200:
+            return resp
+    return all_responses[0] if all_responses else None
