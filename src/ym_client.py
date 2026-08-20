@@ -20,7 +20,7 @@ class YandexMarketClient:
 
     def update_stock(self, stocks):
         """
-        Обновление остатков - ИСПОЛЬЗУЕТ PUT
+        Обновление остатков - ПАЧКИ ПО 500 ТОВАРОВ
         """
         if not stocks:
             logger.error("❌ Нет данных для обновления остатков!")
@@ -33,7 +33,8 @@ class YandexMarketClient:
             'Content-Type': 'application/json'
         }
 
-        chunk_size = 2000
+        # ИЗМЕНЕНИЕ: 500 товаров вместо 2000!
+        chunk_size = 500
         total_items = len(stocks)
         chunks = [stocks[i:i + chunk_size] for i in range(0, total_items, chunk_size)]
         
@@ -65,7 +66,6 @@ class YandexMarketClient:
             payload = {"skus": skus}
             
             try:
-                # ГЛАВНОЕ ИЗМЕНЕНИЕ: PUT вместо POST!
                 response = requests.put(url, json=payload, headers=headers)
                 if response.status_code == 200:
                     logger.info(f"✅ Пачка {idx + 1}/{len(chunks)} успешно отправлена")
@@ -78,7 +78,7 @@ class YandexMarketClient:
                 all_responses.append(None)
             
             if idx < len(chunks) - 1:
-                time.sleep(0.5)
+                time.sleep(0.3)
         
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
@@ -87,14 +87,12 @@ class YandexMarketClient:
 
     def update_prices(self, prices):
         """
-        Обновление цен - ПРАВИЛЬНЫЙ ФОРМАТ
-        Использует бизнес-эндпоинт для всех магазинов
+        Обновление цен - ПАЧКИ ПО 500 ТОВАРОВ
         """
         if not prices:
             logger.error("❌ Нет данных для обновления цен!")
             return None
 
-        # Используем бизнес-эндпоинт
         url = f"{self.base_url}/businesses/{self.business_id}/offer-prices/updates"
         
         headers = {
@@ -102,7 +100,8 @@ class YandexMarketClient:
             'Content-Type': 'application/json'
         }
 
-        chunk_size = 2000
+        # ИЗМЕНЕНИЕ: 500 товаров вместо 2000!
+        chunk_size = 500
         total_items = len(prices)
         chunks = [prices[i:i + chunk_size] for i in range(0, total_items, chunk_size)]
         
@@ -118,11 +117,10 @@ class YandexMarketClient:
                 try:
                     price_value = round(float(item['price']), 2)
                     
-                    # ПРАВИЛЬНАЯ СТРУКТУРА: price - это ОБЪЕКТ!
                     offer = {
                         "offerId": str(item['offer_id']).strip(),
                         "price": {
-                            "value": price_value,        # ЧИСЛО!
+                            "value": price_value,
                             "currencyId": "RUR"
                         }
                     }
@@ -149,7 +147,7 @@ class YandexMarketClient:
                 all_responses.append(None)
             
             if idx < len(chunks) - 1:
-                time.sleep(0.5)
+                time.sleep(0.3)
         
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
