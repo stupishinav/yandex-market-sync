@@ -1,6 +1,6 @@
 """
 Обновление остатков на Яндекс.Маркете
-Поддерживает чтение из нескольких папок (/from_etm/19 и /from_etm/14)
+Поддерживает чтение из нескольких папок
 """
 
 import os
@@ -69,6 +69,7 @@ class StockUpdater:
 
         # ПАПКИ ДЛЯ ПОИСКА - ищем в обоих папках
         paths_to_try = [
+            self.ftp_price_folder,
             "/from_etm/19",
             "/from_etm/14",
             "/from_etm",
@@ -82,18 +83,30 @@ class StockUpdater:
         for path in paths_to_try:
             try:
                 logger.info(f"🔍 Ищем файл с остатками в: {path}")
-                # Ищем файлы с "price" в названии (т.к. файлы называются price.csv)
                 remote_files = self.ftp_client.list_files(path, pattern="price")
                 if remote_files:
-                    for f in remote_files:
-                        local = os.path.join(local_dir, os.path.basename(f))
-                        # Пропускаем уже скачанные файлы
-                        if os.path.exists(local):
-                            logger.info(f"⏭️ Файл уже скачан: {f}")
+                    for remote_file in remote_files:
+                        # ГЛАВНОЕ ИЗМЕНЕНИЕ: создаём уникальное имя файла
+                        folder_name = path.replace('/', '_').replace('\\', '_')
+                        if folder_name.startswith('_'):
+                            folder_name = folder_name[1:]
+                        if not folder_name:
+                            folder_name = 'root'
+                        
+                        # Формируем уникальное имя: папка_имя_файла
+                        base_name = os.path.basename(remote_file)
+                        name, ext = os.path.splitext(base_name)
+                        unique_name = f"{folder_name}_{name}{ext}"
+                        local_path = os.path.join(local_dir, unique_name)
+                        
+                        # Проверяем, скачан ли уже этот файл
+                        if os.path.exists(local_path):
+                            logger.info(f"⏭️ Файл уже скачан: {unique_name}")
                             continue
-                        if self.ftp_client.download_file(f, local):
-                            all_downloaded.append(local)
-                            logger.info(f"📥 Найден и скачан: {f}")
+                        
+                        if self.ftp_client.download_file(remote_file, local_path):
+                            all_downloaded.append(local_path)
+                            logger.info(f"📥 Найден и скачан: {remote_file} -> {unique_name}")
             except Exception as e:
                 logger.warning(f"⚠️ Ошибка при поиске в {path}: {e}")
                 continue
@@ -159,7 +172,6 @@ class StockUpdater:
                                         try:
                                             stock_val = str(stock).strip().replace(',', '.')
                                             if stock_val and stock_val.replace('.', '', 1).isdigit():
-                                                # Пропускаем товары с нулевым остатком (опционально)
                                                 all_stocks.append({
                                                     'offer_id': str(offer_id).strip(),
                                                     'stock': float(stock_val)
