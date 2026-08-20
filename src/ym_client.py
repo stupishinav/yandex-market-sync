@@ -63,7 +63,7 @@ class YandexMarketClient:
 
     def update_prices(self, prices):
         """
-        Обновление цен (ПРАВИЛЬНАЯ СТРУКТУРА!)
+        Обновление цен - ПРАВИЛЬНАЯ СТРУКТУРА ДЛЯ API-KEY
         """
         if not prices:
             logger.error("❌ Нет данных для обновления цен!")
@@ -88,18 +88,21 @@ class YandexMarketClient:
         for idx, chunk in enumerate(chunks):
             logger.info(f"📤 Отправка пачки {idx + 1}/{len(chunks)} (товаров: {len(chunk)})")
             
-            # ПРАВИЛЬНАЯ СТРУКТУРА ДЛЯ ЦЕН
+            # ФОРМИРУЕМ ПРАВИЛЬНЫЙ PAYLOAD
             offers = []
             for item in chunk:
                 try:
+                    # ГЛАВНОЕ: ПРЕОБРАЗУЕМ ЦЕНУ В СТРОКУ С 2 ЗНАКАМИ
+                    price_value = str(round(float(item['price']), 2))
+                    # Убираем .0 если цена целая
+                    if price_value.endswith('.0'):
+                        price_value = price_value[:-2]
+                    
                     offer = {
                         "offerId": str(item['offer_id']).strip(),
-                        "price": str(item['price']).replace(',', '.'),
+                        "price": price_value,
                         "currency": "RUR"
                     }
-                    # Если есть старая цена (для скидки)
-                    if 'old_price' in item and item['old_price']:
-                        offer["oldPrice"] = str(item['old_price']).replace(',', '.')
                     offers.append(offer)
                 except Exception as e:
                     logger.error(f"Ошибка в данных товара {item.get('offer_id')}: {e}")
@@ -107,8 +110,10 @@ class YandexMarketClient:
             
             payload = {"offers": offers}
             
-            logger.info(f"🔍 Пример товара в пачке: {offers[0] if offers else 'нет данных'}")
-            logger.info(f"🔍 Payload (первые 200 символов): {str(payload)[:200]}")
+            # ОТЛАДКА: показываем первый товар в пачке
+            if offers:
+                logger.info(f"🔍 Пример товара в пачке: {offers[0]}")
+                logger.info(f"🔍 Payload (первые 200 символов): {str(payload)[:200]}")
             
             try:
                 response = requests.post(url, json=payload, headers=headers)
@@ -117,7 +122,6 @@ class YandexMarketClient:
                 else:
                     logger.error(f"❌ Ошибка в пачке {idx + 1}/{len(chunks)}: {response.status_code}")
                     logger.error(f"Ответ: {response.text}")
-                    logger.error(f"Отправленный payload: {payload}")
                 all_responses.append(response)
             except Exception as e:
                 logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
