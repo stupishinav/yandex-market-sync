@@ -21,7 +21,6 @@ class YandexMarketClient:
         """Обновление остатков"""
         url = f"{self.base_url}/campaigns/{self.campaign_id}/offers/stocks"
         
-        # Формируем правильный payload для остатков
         skus = []
         for item in stocks:
             try:
@@ -42,7 +41,6 @@ class YandexMarketClient:
         
         payload = {"skus": skus}
         
-        # ПРАВИЛЬНЫЙ ЗАГОЛОВОК ДЛЯ API-KEY
         headers = {
             'Api-Key': self.api_key,
             'Content-Type': 'application/json'
@@ -62,18 +60,48 @@ class YandexMarketClient:
             logger.error(f"❌ Ошибка запроса: {e}")
             return None
 
-    def update_prices(self, payload):
-        """Обновление цен"""
+    def update_prices(self, prices):
+        """
+        Обновление цен
+        Принимает список товаров с ценами
+        """
         url = f"{self.base_url}/campaigns/{self.campaign_id}/offer-prices/updates"
         
-        # Проверяем, что в payload есть данные
-        prices_count = len(payload.get('prices', []))
-        logger.info(f"📤 Формирование запроса на обновление цен (товаров: {prices_count})")
-        
-        # Если товаров нет — сразу возвращаем ошибку
-        if prices_count == 0:
-            logger.error("❌ Нет товаров для обновления цен!")
+        # Проверяем, что пришли данные
+        if not prices:
+            logger.error("❌ Нет данных для обновления цен!")
             return None
+        
+        # ФОРМИРУЕМ ПРАВИЛЬНЫЙ PAYLOAD ДЛЯ ЦЕН
+        # Документация Яндекса: https://yandex.ru/dev/market/partner-api/doc/
+        price_entries = []
+        for item in prices:
+            try:
+                price_entry = {
+                    "id": str(item['offer_id']).strip(),
+                    "price": {
+                        "value": str(item['price']).replace(',', '.'),
+                        "currencyId": "RUR"
+                    }
+                }
+                # Если есть старая цена (для скидки)
+                if 'old_price' in item and item['old_price']:
+                    price_entry['price']['discountBase'] = str(item['old_price']).replace(',', '.')
+                price_entries.append(price_entry)
+            except Exception as e:
+                logger.error(f"Ошибка в данных товара {item.get('offer_id')}: {e}")
+                continue
+        
+        # Формируем финальный payload
+        payload = {"prices": price_entries}
+        
+        logger.info(f"📤 Отправка цен (товаров: {len(price_entries)})")
+        
+        # ОТЛАДКА: показываем первые 2 товара в запросе
+        if len(price_entries) > 0:
+            logger.info(f"🔍 Пример товара в запросе: {price_entries[0]}")
+        if len(price_entries) > 1:
+            logger.info(f"🔍 Пример товара в запросе: {price_entries[1]}")
         
         headers = {
             'Api-Key': self.api_key,
