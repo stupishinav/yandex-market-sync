@@ -53,11 +53,7 @@ class PriceUpdater:
                 return False
 
             logger.info(f"Найдено {len(prices)} товаров для обновления цен")
-            
-            # Отправляем цены в Яндекс
             result = self._update_prices(prices)
-            
-            # Сохраняем результат
             self._save_result(prices, result)
             logger.info("Готово!")
             return True
@@ -130,9 +126,10 @@ class PriceUpdater:
                                     if offer_id and price:
                                         try:
                                             price_str = str(price).strip().replace(',', '.')
+                                            # ГЛАВНОЕ ИЗМЕНЕНИЕ: ОКРУГЛЯЕМ ДО 2 ЗНАКОВ
                                             all_prices.append({
                                                 'offer_id': str(offer_id).strip(),
-                                                'price': float(price_str)
+                                                'price': round(float(price_str), 2)
                                             })
                                         except Exception as e:
                                             logger.warning(f"⚠️ Ошибка в строке {row_count}: {e}")
@@ -157,16 +154,11 @@ class PriceUpdater:
         return all_prices
 
     def _update_prices(self, prices: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Отправляет цены в Яндекс.Маркет
-        """
         if not prices:
             logger.error("❌ Нет данных для отправки!")
             return {}
         
         logger.info(f"📤 Отправка {len(prices)} товаров в Яндекс.Маркет")
-        
-        # Отправляем напрямую список товаров в ym_client
         response = self.ym_client.update_prices(prices)
         return response.json() if response else {}
 
