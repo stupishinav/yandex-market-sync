@@ -1,5 +1,6 @@
 """
 Обновление остатков на Яндекс.Маркете
+Поддерживает чтение из нескольких папок (/from_etm/19 и /from_etm/14)
 """
 
 import os
@@ -46,8 +47,7 @@ class StockUpdater:
 
             stocks = self._parse_stock_files(stock_files)
             
-            # ОТЛАДКА: показываем, сколько товаров прочитано
-            logger.info(f"🔍 Прочитано товаров из файла: {len(stocks)}")
+            logger.info(f"🔍 Прочитано товаров из файлов: {len(stocks)}")
             
             if not stocks:
                 logger.warning("Нет данных об остатках")
@@ -67,31 +67,39 @@ class StockUpdater:
         local_dir = "src/data/stock/"
         os.makedirs(local_dir, exist_ok=True)
 
+        # ПАПКИ ДЛЯ ПОИСКА - ищем в обоих папках
         paths_to_try = [
-            self.ftp_price_folder,
+            "/from_etm/19",
+            "/from_etm/14",
             "/from_etm",
             "from_etm",
             "/",
             ""
         ]
 
+        all_downloaded = []
+        
         for path in paths_to_try:
             try:
-                logger.info(f"Ищем файл с остатками в: {path}")
+                logger.info(f"🔍 Ищем файл с остатками в: {path}")
+                # Ищем файлы с "price" в названии (т.к. файлы называются price.csv)
                 remote_files = self.ftp_client.list_files(path, pattern="price")
                 if remote_files:
-                    downloaded = []
                     for f in remote_files:
                         local = os.path.join(local_dir, os.path.basename(f))
+                        # Пропускаем уже скачанные файлы
+                        if os.path.exists(local):
+                            logger.info(f"⏭️ Файл уже скачан: {f}")
+                            continue
                         if self.ftp_client.download_file(f, local):
-                            downloaded.append(local)
-                            logger.info(f"Найден файл: {f}")
-                    if downloaded:
-                        return downloaded
-            except:
+                            all_downloaded.append(local)
+                            logger.info(f"📥 Найден и скачан: {f}")
+            except Exception as e:
+                logger.warning(f"⚠️ Ошибка при поиске в {path}: {e}")
                 continue
 
-        return []
+        logger.info(f"📊 Всего скачано файлов с остатками: {len(all_downloaded)}")
+        return all_downloaded
 
     def _parse_stock_files(self, file_paths: List[str]) -> List[Dict]:
         all_stocks = []
@@ -113,26 +121,49 @@ class StockUpdater:
                             elif file_path.endswith('.csv'):
                                 reader = csv.DictReader(f, delimiter=';')
                                 
-                                # ОТЛАДКА: показываем названия колонок
                                 logger.info(f"📋 Названия колонок в CSV: {reader.fieldnames}")
                                 
                                 row_count = 0
                                 for row in reader:
                                     row_count += 1
-                                    # ОТЛАДКА: показываем первые 3 строки
                                     if row_count <= 3:
                                         logger.info(f"📊 Строка {row_count}: {row}")
                                     
-                                    offer_id = row.get('Код ЭТМ') or row.get('offer_id') or row.get('SKU')
-                                    stock = row.get('Количество') or row.get('stock') or row.get('quantity')
+                                    # Ищем Код ЭТМ
+                                    offer_id = None
+                                    for key in row.keys():
+                                        if key and key.strip():
+                                            if 'Код ЭТМ' in key or 'offer_id' in key or 'SKU' in key:
+                                                offer_id = row.get(key)
+                                                break
                                     
-                                    if offer_id and stock:
+                                    if not offer_id:
+                                        values = list(row.values())
+                                        if values:
+                                            offer_id = values[0]
+                                    
+                                    # Ищем количество
+                                    stock = None
+                                    for key in row.keys():
+                                        if key and key.strip():
+                                            if 'Количество' in key or 'stock' in key or 'quantity' in key:
+                                                stock = row.get(key)
+                                                break
+                                    
+                                    if not stock:
+                                        values = list(row.values())
+                                        if len(values) > 3:
+                                            stock = values[3]
+                                    
+                                    if offer_id and stock is not None:
                                         try:
                                             stock_val = str(stock).strip().replace(',', '.')
-                                            all_stocks.append({
-                                                'offer_id': str(offer_id).strip(),
-                                                'stock': float(stock_val)
-                                            })
+                                            if stock_val and stock_val.replace('.', '', 1).isdigit():
+                                                # Пропускаем товары с нулевым остатком (опционально)
+                                                all_stocks.append({
+                                                    'offer_id': str(offer_id).strip(),
+                                                    'stock': float(stock_val)
+                                                })
                                         except Exception as e:
                                             logger.warning(f"⚠️ Ошибка в строке {row_count}: {e}")
                                     else:
@@ -152,7 +183,17 @@ class StockUpdater:
             except Exception as e:
                 logger.error(f"Ошибка парсинга {file_path}: {e}")
 
-        return all_stocks
+        # Удаляем дубликаты (если одинаковый offer_id в двух файлах)
+        unique_stocks = {}
+        for item in all_stocks:
+            offer_id = item.get('offer_id')
+            if offer_id:
+                # Если товар уже есть, оставляем последнее значение
+                unique_stocks[offer_id] = item
+        
+        result = list(unique_stocks.values())
+        logger.info(f"🔍 ИТОГО прочитано уникальных товаров: {len(result)} (было {len(all_stocks)})")
+        return result
 
     def _update_stocks(self, stocks: List[Dict]) -> Dict:
         response = self.ym_client.update_stock(stocks)
