@@ -63,13 +63,15 @@ class YandexMarketClient:
 
     def update_prices(self, prices):
         """
-        Обновление цен - ПРАВИЛЬНАЯ СТРУКТУРА ДЛЯ API-KEY
+        Обновление цен - ПРАВИЛЬНЫЙ ЭНДПОИНТ ДЛЯ API-KEY
+        Используется .json вместо /updates
         """
         if not prices:
             logger.error("❌ Нет данных для обновления цен!")
             return None
 
-        url = f"{self.base_url}/campaigns/{self.campaign_id}/offer-prices/updates"
+        # ПРАВИЛЬНЫЙ URL ДЛЯ API-KEY
+        url = f"{self.base_url}/campaigns/{self.campaign_id}/offer-prices.json"
         
         headers = {
             'Api-Key': self.api_key,
@@ -92,16 +94,15 @@ class YandexMarketClient:
             offers = []
             for item in chunk:
                 try:
-                    # ГЛАВНОЕ: ПРЕОБРАЗУЕМ ЦЕНУ В СТРОКУ С 2 ЗНАКАМИ
+                    # Форматируем цену как строку
                     price_value = str(round(float(item['price']), 2))
-                    # Убираем .0 если цена целая
                     if price_value.endswith('.0'):
                         price_value = price_value[:-2]
                     
                     offer = {
                         "offerId": str(item['offer_id']).strip(),
                         "price": price_value,
-                        "currency": "RUR"
+                        "currencyId": "RUR"
                     }
                     offers.append(offer)
                 except Exception as e:
@@ -110,7 +111,6 @@ class YandexMarketClient:
             
             payload = {"offers": offers}
             
-            # ОТЛАДКА: показываем первый товар в пачке
             if offers:
                 logger.info(f"🔍 Пример товара в пачке: {offers[0]}")
                 logger.info(f"🔍 Payload (первые 200 символов): {str(payload)[:200]}")
@@ -127,11 +127,9 @@ class YandexMarketClient:
                 logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
                 all_responses.append(None)
             
-            # Пауза между пачками
             if idx < len(chunks) - 1:
                 time.sleep(0.5)
         
-        # Возвращаем последний успешный ответ
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
                 return resp
