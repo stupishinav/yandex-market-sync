@@ -45,6 +45,10 @@ class StockUpdater:
                 return False
 
             stocks = self._parse_stock_files(stock_files)
+            
+            # ОТЛАДКА: показываем, сколько товаров прочитано
+            logger.info(f"🔍 Прочитано товаров из файла: {len(stocks)}")
+            
             if not stocks:
                 logger.warning("Нет данных об остатках")
                 return False
@@ -95,6 +99,8 @@ class StockUpdater:
 
         for file_path in file_paths:
             try:
+                logger.info(f"📄 Открываем файл: {file_path}")
+                
                 for encoding in encodings:
                     try:
                         with open(file_path, 'r', encoding=encoding) as f:
@@ -106,20 +112,42 @@ class StockUpdater:
                                     break
                             elif file_path.endswith('.csv'):
                                 reader = csv.DictReader(f, delimiter=';')
+                                
+                                # ОТЛАДКА: показываем названия колонок
+                                logger.info(f"📋 Названия колонок в CSV: {reader.fieldnames}")
+                                
+                                row_count = 0
                                 for row in reader:
+                                    row_count += 1
+                                    # ОТЛАДКА: показываем первые 3 строки
+                                    if row_count <= 3:
+                                        logger.info(f"📊 Строка {row_count}: {row}")
+                                    
                                     offer_id = row.get('Код ЭТМ') or row.get('offer_id') or row.get('SKU')
                                     stock = row.get('Количество') or row.get('stock') or row.get('quantity')
+                                    
                                     if offer_id and stock:
-                                        stock_val = str(stock).strip().replace(',', '.')
-                                        all_stocks.append({
-                                            'offer_id': str(offer_id).strip(),
-                                            'stock': float(stock_val)
-                                        })
+                                        try:
+                                            stock_val = str(stock).strip().replace(',', '.')
+                                            all_stocks.append({
+                                                'offer_id': str(offer_id).strip(),
+                                                'stock': float(stock_val)
+                                            })
+                                        except Exception as e:
+                                            logger.warning(f"⚠️ Ошибка в строке {row_count}: {e}")
+                                    else:
+                                        if row_count <= 3:
+                                            logger.warning(f"⚠️ В строке {row_count} нет 'Код ЭТМ' или 'Количество'")
+                                
+                                logger.info(f"📊 Всего строк в CSV: {row_count}")
+                                logger.info(f"📊 Прочитано товаров: {len(all_stocks)}")
                                 logger.info(f"Прочитан CSV (кодировка: {encoding})")
                                 break
                     except UnicodeDecodeError:
+                        logger.warning(f"⚠️ Не подошла кодировка {encoding}")
                         continue
                     except Exception as e:
+                        logger.error(f"Ошибка при чтении с кодировкой {encoding}: {e}")
                         continue
             except Exception as e:
                 logger.error(f"Ошибка парсинга {file_path}: {e}")
