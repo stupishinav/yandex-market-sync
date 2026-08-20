@@ -110,27 +110,58 @@ class PriceUpdater:
                                     logger.info(f"Прочитан JSON (кодировка: {encoding})")
                                     break
                             elif file_path.endswith('.csv'):
+                                # Читаем CSV с разделителем ;
                                 reader = csv.DictReader(f, delimiter=';')
                                 
-                                logger.info(f"📋 Названия колонок в CSV: {reader.fieldnames}")
+                                # Получаем список колонок и удаляем пустые
+                                fieldnames = [col for col in reader.fieldnames if col.strip()]
+                                logger.info(f"📋 Названия колонок в CSV: {fieldnames}")
                                 
                                 row_count = 0
                                 for row in reader:
                                     row_count += 1
+                                    
+                                    # Показываем первые 3 строки для отладки
                                     if row_count <= 3:
                                         logger.info(f"📊 Строка {row_count}: {row}")
                                     
-                                    offer_id = row.get('Код ЭТМ') or row.get('offer_id') or row.get('SKU')
-                                    price = row.get('Розничная Цена') or row.get('price') or row.get('цена')
+                                    # Ищем колонку с кодом товара
+                                    offer_id = None
+                                    for key in row.keys():
+                                        if key and key.strip():
+                                            if 'Код ЭТМ' in key or 'offer_id' in key or 'SKU' in key or 'id' in key:
+                                                offer_id = row.get(key)
+                                                break
+                                    
+                                    # Если не нашли по ключу, берем первую колонку
+                                    if not offer_id:
+                                        values = list(row.values())
+                                        if values:
+                                            offer_id = values[0]
+                                    
+                                    # Ищем колонку с ценой
+                                    price = None
+                                    for key in row.keys():
+                                        if key and key.strip():
+                                            if 'Розничная Цена' in key or 'price' in key or 'цена' in key or 'Price' in key:
+                                                price = row.get(key)
+                                                break
+                                    
+                                    # Если не нашли по ключу, берем 10-ю колонку (индекс 9)
+                                    if not price:
+                                        values = list(row.values())
+                                        if len(values) > 9:
+                                            price = values[9]
                                     
                                     if offer_id and price:
                                         try:
                                             price_str = str(price).strip().replace(',', '.')
-                                            # ГЛАВНОЕ ИЗМЕНЕНИЕ: ОКРУГЛЯЕМ ДО 2 ЗНАКОВ
-                                            all_prices.append({
-                                                'offer_id': str(offer_id).strip(),
-                                                'price': round(float(price_str), 2)
-                                            })
+                                            # Проверяем, что это число
+                                            if price_str and price_str.replace('.', '', 1).isdigit():
+                                                all_prices.append({
+                                                    'offer_id': str(offer_id).strip(),
+                                                    'price': round(float(price_str), 2)
+                                                })
                                         except Exception as e:
                                             logger.warning(f"⚠️ Ошибка в строке {row_count}: {e}")
                                     else:
