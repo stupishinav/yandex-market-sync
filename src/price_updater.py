@@ -1,5 +1,6 @@
 """
 Обновление цен на Яндекс.Маркете
+Поддерживает чтение из нескольких папок
 """
 
 import os
@@ -66,31 +67,38 @@ class PriceUpdater:
         local_dir = "src/data/prices/"
         os.makedirs(local_dir, exist_ok=True)
 
+        # ПАПКИ ДЛЯ ПОИСКА - ДОБАВЛЯЕМ ВСЕ НУЖНЫЕ ПУТИ
         paths_to_try = [
-            self.ftp_price_folder,
+            "/from_etm/19",
+            "/from_etm/14",
             "/from_etm",
             "from_etm",
             "/",
             ""
         ]
 
+        all_downloaded = []
+        
         for path in paths_to_try:
             try:
-                logger.info(f"Ищем в: {path}")
+                logger.info(f"🔍 Ищем в: {path}")
                 remote_files = self.ftp_client.list_files(path, pattern="price")
                 if remote_files:
-                    downloaded = []
                     for f in remote_files:
                         local = os.path.join(local_dir, os.path.basename(f))
+                        # Пропускаем уже скачанные файлы
+                        if os.path.exists(local):
+                            logger.info(f"⏭️ Файл уже скачан: {f}")
+                            continue
                         if self.ftp_client.download_file(f, local):
-                            downloaded.append(local)
-                            logger.info(f"Найден файл: {f}")
-                    if downloaded:
-                        return downloaded
-            except:
+                            all_downloaded.append(local)
+                            logger.info(f"📥 Найден и скачан: {f}")
+            except Exception as e:
+                logger.warning(f"⚠️ Ошибка при поиске в {path}: {e}")
                 continue
 
-        return []
+        logger.info(f"📊 Всего скачано файлов: {len(all_downloaded)}")
+        return all_downloaded
 
     def _parse_price_files(self, file_paths: List[str]) -> List[Dict[str, Any]]:
         all_prices = []
@@ -110,44 +118,37 @@ class PriceUpdater:
                                     logger.info(f"Прочитан JSON (кодировка: {encoding})")
                                     break
                             elif file_path.endswith('.csv'):
-                                # Читаем CSV с разделителем ;
                                 reader = csv.DictReader(f, delimiter=';')
                                 
-                                # Получаем список колонок и удаляем пустые
-                                fieldnames = [col for col in reader.fieldnames if col.strip()]
-                                logger.info(f"📋 Названия колонок в CSV: {fieldnames}")
+                                logger.info(f"📋 Названия колонок в CSV: {reader.fieldnames}")
                                 
                                 row_count = 0
                                 for row in reader:
                                     row_count += 1
-                                    
-                                    # Показываем первые 3 строки для отладки
                                     if row_count <= 3:
                                         logger.info(f"📊 Строка {row_count}: {row}")
                                     
-                                    # Ищем колонку с кодом товара
+                                    # Ищем Код ЭТМ
                                     offer_id = None
                                     for key in row.keys():
                                         if key and key.strip():
-                                            if 'Код ЭТМ' in key or 'offer_id' in key or 'SKU' in key or 'id' in key:
+                                            if 'Код ЭТМ' in key or 'offer_id' in key or 'SKU' in key:
                                                 offer_id = row.get(key)
                                                 break
                                     
-                                    # Если не нашли по ключу, берем первую колонку
                                     if not offer_id:
                                         values = list(row.values())
                                         if values:
                                             offer_id = values[0]
                                     
-                                    # Ищем колонку с ценой
+                                    # Ищем цену
                                     price = None
                                     for key in row.keys():
                                         if key and key.strip():
-                                            if 'Розничная Цена' in key or 'price' in key or 'цена' in key or 'Price' in key:
+                                            if 'Розничная Цена' in key or 'price' in key or 'цена' in key:
                                                 price = row.get(key)
                                                 break
                                     
-                                    # Если не нашли по ключу, берем 10-ю колонку (индекс 9)
                                     if not price:
                                         values = list(row.values())
                                         if len(values) > 9:
@@ -156,7 +157,6 @@ class PriceUpdater:
                                     if offer_id and price:
                                         try:
                                             price_str = str(price).strip().replace(',', '.')
-                                            # Проверяем, что это число
                                             if price_str and price_str.replace('.', '', 1).isdigit():
                                                 all_prices.append({
                                                     'offer_id': str(offer_id).strip(),
@@ -181,8 +181,17 @@ class PriceUpdater:
             except Exception as e:
                 logger.error(f"Ошибка парсинга {file_path}: {e}")
 
-        logger.info(f"🔍 ИТОГО прочитано товаров из CSV: {len(all_prices)}")
-        return all_prices
+        # Удаляем дубликаты (если одинаковый offer_id в двух файлах)
+        unique_prices = {}
+        for item in all_prices:
+            offer_id = item.get('offer_id')
+            if offer_id:
+                # Если товар уже есть, оставляем последнюю цену
+                unique_prices[offer_id] = item
+        
+        result = list(unique_prices.values())
+        logger.info(f"🔍 ИТОГО прочитано уникальных товаров: {len(result)} (было {len(all_prices)})")
+        return result
 
     def _update_prices(self, prices: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not prices:
