@@ -44,7 +44,7 @@ class YandexMarketClient:
         
         # ПРАВИЛЬНЫЙ ЗАГОЛОВОК ДЛЯ API-KEY
         headers = {
-            'Api-Key': self.api_key,  # <-- ГЛАВНОЕ ИЗМЕНЕНИЕ!
+            'Api-Key': self.api_key,
             'Content-Type': 'application/json'
         }
         
@@ -66,13 +66,19 @@ class YandexMarketClient:
         """Обновление цен"""
         url = f"{self.base_url}/campaigns/{self.campaign_id}/offer-prices/updates"
         
-        # ПРАВИЛЬНЫЙ ЗАГОЛОВОК ДЛЯ API-KEY
+        # Проверяем, что в payload есть данные
+        prices_count = len(payload.get('prices', []))
+        logger.info(f"📤 Формирование запроса на обновление цен (товаров: {prices_count})")
+        
+        # Если товаров нет — сразу возвращаем ошибку
+        if prices_count == 0:
+            logger.error("❌ Нет товаров для обновления цен!")
+            return None
+        
         headers = {
-            'Api-Key': self.api_key,  # <-- ГЛАВНОЕ ИЗМЕНЕНИЕ!
+            'Api-Key': self.api_key,
             'Content-Type': 'application/json'
         }
-        
-        logger.info(f"📤 Отправка цен (товаров: {len(payload.get('prices', []))})")
         
         try:
             response = requests.post(url, json=payload, headers=headers)
