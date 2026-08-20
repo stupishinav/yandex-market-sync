@@ -47,7 +47,7 @@ class PriceUpdater:
 
             prices = self._parse_price_files(price_files)
             
-            logger.info(f"🔍 Прочитано товаров из файла: {len(prices)}")
+            logger.info(f"🔍 Прочитано товаров из файлов: {len(prices)}")
             
             if not prices:
                 logger.warning("Нет данных о ценах")
@@ -67,8 +67,9 @@ class PriceUpdater:
         local_dir = "src/data/prices/"
         os.makedirs(local_dir, exist_ok=True)
 
-        # ПАПКИ ДЛЯ ПОИСКА - ДОБАВЛЯЕМ ВСЕ НУЖНЫЕ ПУТИ
+        # ПАПКИ ДЛЯ ПОИСКА
         paths_to_try = [
+            self.ftp_price_folder,
             "/from_etm/19",
             "/from_etm/14",
             "/from_etm",
@@ -84,15 +85,28 @@ class PriceUpdater:
                 logger.info(f"🔍 Ищем в: {path}")
                 remote_files = self.ftp_client.list_files(path, pattern="price")
                 if remote_files:
-                    for f in remote_files:
-                        local = os.path.join(local_dir, os.path.basename(f))
-                        # Пропускаем уже скачанные файлы
-                        if os.path.exists(local):
-                            logger.info(f"⏭️ Файл уже скачан: {f}")
+                    for remote_file in remote_files:
+                        # ГЛАВНОЕ ИЗМЕНЕНИЕ: создаём уникальное имя файла
+                        folder_name = path.replace('/', '_').replace('\\', '_')
+                        if folder_name.startswith('_'):
+                            folder_name = folder_name[1:]
+                        if not folder_name:
+                            folder_name = 'root'
+                        
+                        # Формируем уникальное имя: папка_имя_файла
+                        base_name = os.path.basename(remote_file)
+                        name, ext = os.path.splitext(base_name)
+                        unique_name = f"{folder_name}_{name}{ext}"
+                        local_path = os.path.join(local_dir, unique_name)
+                        
+                        # Проверяем, скачан ли уже этот файл
+                        if os.path.exists(local_path):
+                            logger.info(f"⏭️ Файл уже скачан: {unique_name}")
                             continue
-                        if self.ftp_client.download_file(f, local):
-                            all_downloaded.append(local)
-                            logger.info(f"📥 Найден и скачан: {f}")
+                        
+                        if self.ftp_client.download_file(remote_file, local_path):
+                            all_downloaded.append(local_path)
+                            logger.info(f"📥 Найден и скачан: {remote_file} -> {unique_name}")
             except Exception as e:
                 logger.warning(f"⚠️ Ошибка при поиске в {path}: {e}")
                 continue
@@ -181,7 +195,7 @@ class PriceUpdater:
             except Exception as e:
                 logger.error(f"Ошибка парсинга {file_path}: {e}")
 
-        # Удаляем дубликаты (если одинаковый offer_id в двух файлах)
+        # Удаляем дубликаты по offer_id (если товар есть в нескольких файлах)
         unique_prices = {}
         for item in all_prices:
             offer_id = item.get('offer_id')
