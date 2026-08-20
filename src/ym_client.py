@@ -21,24 +21,34 @@ class YandexMarketClient:
         """Обновление остатков"""
         url = f"{self.base_url}/campaigns/{self.campaign_id}/offers/stocks"
         
-        payload = {
-            "skus": [
-                {
-                    "sku": item['offer_id'],
-                    "warehouseId": self.warehouse_id,
-                    "items": [{"count": int(item['stock']), "type": "FIT"}]
+        # Формируем правильный payload для остатков
+        skus = []
+        for item in stocks:
+            try:
+                sku = {
+                    "sku": str(item['offer_id']).strip(),
+                    "warehouseId": str(self.warehouse_id),
+                    "items": [
+                        {
+                            "count": int(float(str(item['stock']).replace(',', '.'))),
+                            "type": "FIT"
+                        }
+                    ]
                 }
-                for item in stocks
-            ]
-        }
+                skus.append(sku)
+            except Exception as e:
+                logger.error(f"Ошибка в данных товара {item.get('offer_id')}: {e}")
+                continue
         
-        # ВАЖНО! Для API-Key используется заголовок Api-Key
+        payload = {"skus": skus}
+        
+        # ПРАВИЛЬНЫЙ ЗАГОЛОВОК ДЛЯ API-KEY
         headers = {
-            'Api-Key': self.api_key,  # ← ЭТО КЛЮЧЕВОЕ ИЗМЕНЕНИЕ!
+            'Api-Key': self.api_key,  # <-- ГЛАВНОЕ ИЗМЕНЕНИЕ!
             'Content-Type': 'application/json'
         }
         
-        logger.info(f"📤 Отправка остатков (товаров: {len(stocks)})")
+        logger.info(f"📤 Отправка остатков (товаров: {len(skus)})")
         
         try:
             response = requests.post(url, json=payload, headers=headers)
@@ -56,9 +66,9 @@ class YandexMarketClient:
         """Обновление цен"""
         url = f"{self.base_url}/campaigns/{self.campaign_id}/offer-prices/updates"
         
-        # ВАЖНО! Для API-Key используется заголовок Api-Key
+        # ПРАВИЛЬНЫЙ ЗАГОЛОВОК ДЛЯ API-KEY
         headers = {
-            'Api-Key': self.api_key,  # ← ЭТО КЛЮЧЕВОЕ ИЗМЕНЕНИЕ!
+            'Api-Key': self.api_key,  # <-- ГЛАВНОЕ ИЗМЕНЕНИЕ!
             'Content-Type': 'application/json'
         }
         
