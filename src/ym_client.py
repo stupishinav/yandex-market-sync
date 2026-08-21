@@ -19,10 +19,6 @@ class YandexMarketClient:
         self.base_url = "https://api.partner.market.yandex.ru/v2"
 
     def update_stock(self, stocks):
-        """
-        Обновление остатков - ИСПОЛЬЗУЕТ PUT
-        Пауза 1 секунда между запросами
-        """
         if not stocks:
             logger.error("❌ Нет данных для обновления остатков!")
             return None
@@ -41,6 +37,7 @@ class YandexMarketClient:
         logger.info(f"📦 Разбивка {total_items} остатков на {len(chunks)} пачек по {chunk_size} шт.")
         
         all_responses = []
+        base_delay = 2.0  # Начальная пауза 2 секунды
         
         for idx, chunk in enumerate(chunks):
             logger.info(f"📤 Отправка пачки {idx + 1}/{len(chunks)} (товаров: {len(chunk)})")
@@ -69,6 +66,16 @@ class YandexMarketClient:
                 response = requests.put(url, json=payload, headers=headers)
                 if response.status_code == 200:
                     logger.info(f"✅ Пачка {idx + 1}/{len(chunks)} успешно отправлена")
+                elif response.status_code == 420:
+                    logger.warning(f"⚠️ Превышен лимит! Увеличиваем паузу до {base_delay + 2} сек")
+                    base_delay += 2
+                    time.sleep(base_delay)
+                    response = requests.put(url, json=payload, headers=headers)
+                    if response.status_code == 200:
+                        logger.info(f"✅ Пачка {idx + 1}/{len(chunks)} успешно отправлена после паузы")
+                    else:
+                        logger.error(f"❌ Ошибка в пачке {idx + 1}/{len(chunks)}: {response.status_code}")
+                        logger.error(f"Ответ: {response.text}")
                 else:
                     logger.error(f"❌ Ошибка в пачке {idx + 1}/{len(chunks)}: {response.status_code}")
                     logger.error(f"Ответ: {response.text}")
@@ -77,9 +84,8 @@ class YandexMarketClient:
                 logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
                 all_responses.append(None)
             
-            # ПАУЗА 1 СЕКУНДА между запросами
             if idx < len(chunks) - 1:
-                time.sleep(1.0)
+                time.sleep(base_delay)
         
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
@@ -87,10 +93,6 @@ class YandexMarketClient:
         return None
 
     def update_prices(self, prices):
-        """
-        Обновление цен - ПРАВИЛЬНЫЙ ФОРМАТ
-        Пауза 1 секунда между запросами
-        """
         if not prices:
             logger.error("❌ Нет данных для обновления цен!")
             return None
@@ -109,6 +111,7 @@ class YandexMarketClient:
         logger.info(f"📦 Разбивка {total_items} цен на {len(chunks)} пачек по {chunk_size} шт.")
         
         all_responses = []
+        base_delay = 2.0  # Начальная пауза 2 секунды
         
         for idx, chunk in enumerate(chunks):
             logger.info(f"📤 Отправка пачки {idx + 1}/{len(chunks)} (товаров: {len(chunk)})")
@@ -117,7 +120,6 @@ class YandexMarketClient:
             for item in chunk:
                 try:
                     price_value = round(float(item['price']), 2)
-                    
                     offer = {
                         "offerId": str(item['offer_id']).strip(),
                         "price": {
@@ -139,6 +141,16 @@ class YandexMarketClient:
                 response = requests.post(url, json=payload, headers=headers)
                 if response.status_code == 200:
                     logger.info(f"✅ Пачка {idx + 1}/{len(chunks)} успешно отправлена")
+                elif response.status_code == 420:
+                    logger.warning(f"⚠️ Превышен лимит! Увеличиваем паузу до {base_delay + 2} сек")
+                    base_delay += 2
+                    time.sleep(base_delay)
+                    response = requests.post(url, json=payload, headers=headers)
+                    if response.status_code == 200:
+                        logger.info(f"✅ Пачка {idx + 1}/{len(chunks)} успешно отправлена после паузы")
+                    else:
+                        logger.error(f"❌ Ошибка в пачке {idx + 1}/{len(chunks)}: {response.status_code}")
+                        logger.error(f"Ответ: {response.text}")
                 else:
                     logger.error(f"❌ Ошибка в пачке {idx + 1}/{len(chunks)}: {response.status_code}")
                     logger.error(f"Ответ: {response.text}")
@@ -147,9 +159,8 @@ class YandexMarketClient:
                 logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
                 all_responses.append(None)
             
-            # ПАУЗА 1 СЕКУНДА между запросами
             if idx < len(chunks) - 1:
-                time.sleep(1.0)
+                time.sleep(base_delay)
         
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
