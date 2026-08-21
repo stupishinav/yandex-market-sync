@@ -1,5 +1,6 @@
 """
 Обновление цен на Яндекс.Маркете
+Поддерживает чтение из нескольких папок
 """
 
 import os
@@ -66,6 +67,7 @@ class PriceUpdater:
         local_dir = "src/data/prices/"
         os.makedirs(local_dir, exist_ok=True)
 
+        # ПАПКИ ДЛЯ ПОИСКА
         paths_to_try = [
             self.ftp_price_folder,
             "/from_etm/19",
@@ -84,6 +86,7 @@ class PriceUpdater:
                 remote_files = self.ftp_client.list_files(path, pattern="price")
                 if remote_files:
                     for remote_file in remote_files:
+                        # Создаём уникальное имя файла
                         folder_name = path.replace('/', '_').replace('\\', '_')
                         if folder_name.startswith('_'):
                             folder_name = folder_name[1:]
@@ -137,6 +140,7 @@ class PriceUpdater:
                                     if row_count <= 3:
                                         logger.info(f"📊 Строка {row_count}: {row}")
                                     
+                                    # Ищем Код ЭТМ
                                     offer_id = None
                                     for key in row.keys():
                                         if key and key.strip():
@@ -149,6 +153,7 @@ class PriceUpdater:
                                         if values:
                                             offer_id = values[0]
                                     
+                                    # Ищем цену
                                     price = None
                                     for key in row.keys():
                                         if key and key.strip():
@@ -188,6 +193,7 @@ class PriceUpdater:
             except Exception as e:
                 logger.error(f"Ошибка парсинга {file_path}: {e}")
 
+        # Удаляем дубликаты по offer_id
         unique_prices = {}
         for item in all_prices:
             offer_id = item.get('offer_id')
