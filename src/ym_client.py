@@ -21,6 +21,7 @@ class YandexMarketClient:
     def update_stock(self, stocks):
         """
         Обновление остатков - ИСПОЛЬЗУЕТ PUT
+        Пауза 1 секунда между запросами
         """
         if not stocks:
             logger.error("❌ Нет данных для обновления остатков!")
@@ -76,8 +77,9 @@ class YandexMarketClient:
                 logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
                 all_responses.append(None)
             
+            # ПАУЗА 1 СЕКУНДА между запросами
             if idx < len(chunks) - 1:
-                time.sleep(0.3)
+                time.sleep(1.0)
         
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
@@ -86,7 +88,8 @@ class YandexMarketClient:
 
     def update_prices(self, prices):
         """
-        Обновление цен - ИСПОЛЬЗУЕТ Api-Key
+        Обновление цен - ПРАВИЛЬНЫЙ ФОРМАТ
+        Пауза 1 секунда между запросами
         """
         if not prices:
             logger.error("❌ Нет данных для обновления цен!")
@@ -94,7 +97,6 @@ class YandexMarketClient:
 
         url = f"{self.base_url}/businesses/{self.business_id}/offer-prices/updates"
         
-        # ✅ ПРАВИЛЬНО: Api-Key для обоих методов
         headers = {
             'Api-Key': self.api_key,
             'Content-Type': 'application/json'
@@ -145,8 +147,9 @@ class YandexMarketClient:
                 logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
                 all_responses.append(None)
             
+            # ПАУЗА 1 СЕКУНДА между запросами
             if idx < len(chunks) - 1:
-                time.sleep(0.3)
+                time.sleep(1.0)
         
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
