@@ -18,7 +18,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 120  # ← УВЕЛИЧЕНО ДО 120 МИНУТ
     
     steps:
       - uses: actions/checkout@v4
