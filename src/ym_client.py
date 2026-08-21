@@ -21,7 +21,6 @@ class YandexMarketClient:
     def update_stock(self, stocks):
         """
         Обновление остатков - ИСПОЛЬЗУЕТ PUT
-        Возвращает Response или None
         """
         if not stocks:
             logger.error("❌ Нет данных для обновления остатков!")
@@ -34,7 +33,6 @@ class YandexMarketClient:
             'Content-Type': 'application/json'
         }
 
-        # Пачки по 500 товаров (лимит Яндекса)
         chunk_size = 500
         total_items = len(stocks)
         chunks = [stocks[i:i + chunk_size] for i in range(0, total_items, chunk_size)]
@@ -67,7 +65,6 @@ class YandexMarketClient:
             payload = {"skus": skus}
             
             try:
-                # ✅ ПРАВИЛЬНО: PUT вместо POST!
                 response = requests.put(url, json=payload, headers=headers)
                 if response.status_code == 200:
                     logger.info(f"✅ Пачка {idx + 1}/{len(chunks)} успешно отправлена")
@@ -79,11 +76,9 @@ class YandexMarketClient:
                 logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
                 all_responses.append(None)
             
-            # Пауза между пачками
             if idx < len(chunks) - 1:
                 time.sleep(0.3)
         
-        # Возвращаем последний успешный ответ или None
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
                 return resp
@@ -91,24 +86,20 @@ class YandexMarketClient:
 
     def update_prices(self, prices):
         """
-        Обновление цен - ПРАВИЛЬНЫЙ ФОРМАТ
-        Использует бизнес-эндпоинт для всех магазинов
-        Возвращает Response или None
+        Обновление цен - ИСПОЛЬЗУЕТ Api-Key
         """
         if not prices:
             logger.error("❌ Нет данных для обновления цен!")
             return None
 
-        # ✅ ПРАВИЛЬНО: бизнес-эндпоинт
         url = f"{self.base_url}/businesses/{self.business_id}/offer-prices/updates"
         
-        # ✅ ПРАВИЛЬНО: заголовок Authorization для цен
+        # ✅ ПРАВИЛЬНО: Api-Key для обоих методов
         headers = {
-            'Authorization': f'OAuth {self.api_key}',
+            'Api-Key': self.api_key,
             'Content-Type': 'application/json'
         }
 
-        # Пачки по 500 товаров (лимит Яндекса)
         chunk_size = 500
         total_items = len(prices)
         chunks = [prices[i:i + chunk_size] for i in range(0, total_items, chunk_size)]
@@ -125,7 +116,6 @@ class YandexMarketClient:
                 try:
                     price_value = round(float(item['price']), 2)
                     
-                    # ✅ ПРАВИЛЬНО: price - это ОБЪЕКТ!
                     offer = {
                         "offerId": str(item['offer_id']).strip(),
                         "price": {
@@ -155,11 +145,9 @@ class YandexMarketClient:
                 logger.error(f"❌ Ошибка запроса для пачки {idx + 1}: {e}")
                 all_responses.append(None)
             
-            # Пауза между пачками
             if idx < len(chunks) - 1:
                 time.sleep(0.3)
         
-        # Возвращаем последний успешный ответ или None
         for resp in reversed(all_responses):
             if resp and resp.status_code == 200:
                 return resp
